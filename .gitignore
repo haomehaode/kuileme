@@ -50,6 +50,7 @@ build/
 app/build/ios/iphonesimulator/
 app/build/ios/iphoneos/
 !app/build/ios/ipa/
+!app/build/ios/ipa/*.ipa
 
 # Coverage
 coverage/
