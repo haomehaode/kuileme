@@ -46,6 +46,11 @@ build/
 *.ipr
 *.iws
 
+# iOS Build artifacts (keep releases)
+app/build/ios/iphonesimulator/
+app/build/ios/iphoneos/
+!app/build/ios/ipa/
+
 # Coverage
 coverage/
 *.lcov
