@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:http_parser/http_parser.dart';
 import '../models/post.dart';
 import '../models/notification.dart';
 import '../models/recovery.dart';
@@ -167,6 +168,93 @@ class ApiService {
     }
   }
   
+  /// 更新用户信息
+  Future<Map<String, dynamic>> updateUser({
+    String? nickname,
+    String? avatar,
+    String? bio,
+    List<String>? tags,
+    bool? hideTotalLoss,
+    bool? hideMedals,
+  }) async {
+    final body = <String, dynamic>{};
+    if (nickname != null) body['nickname'] = nickname;
+    if (avatar != null) body['avatar'] = avatar;
+    if (bio != null) body['bio'] = bio;
+    if (tags != null) body['tags'] = tags;
+    if (hideTotalLoss != null) body['hide_total_loss'] = hideTotalLoss ? 1 : 0;
+    if (hideMedals != null) body['hide_medals'] = hideMedals ? 1 : 0;
+    
+    final response = await http.put(
+      Uri.parse('${ApiConfig.baseUrl}/users/me'),
+      headers: ApiConfig.getHeaders(token),
+      body: jsonEncode(body),
+    );
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('更新用户信息失败: ${response.body}');
+    }
+  }
+  
+  /// 上传头像
+  Future<String> uploadAvatar(File imageFile) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/users/upload-avatar');
+    final request = http.MultipartRequest('POST', uri);
+    
+    // 添加认证头
+    if (token != null) {
+      request.headers['Authorization'] = 'Bearer $token';
+    }
+    
+    // 添加文件
+    final fileStream = imageFile.openRead();
+    final fileLength = await imageFile.length();
+    final multipartFile = http.MultipartFile(
+      'file',
+      fileStream,
+      fileLength,
+      filename: imageFile.path.split('/').last,
+      contentType: _getImageContentType(imageFile.path),
+    );
+    request.files.add(multipartFile);
+    
+    // 发送请求
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      final avatarUrl = data['avatar_url'] as String;
+      // 如果是相对路径，转换为完整URL
+      if (avatarUrl.startsWith('/')) {
+        return '${ApiConfig.baseUrl}$avatarUrl';
+      }
+      return avatarUrl;
+    } else {
+      throw Exception('上传头像失败: ${response.body}');
+    }
+  }
+  
+  /// 根据文件路径获取图片ContentType
+  MediaType _getImageContentType(String filePath) {
+    final extension = filePath.split('.').last.toLowerCase();
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return MediaType('image', 'jpeg');
+      case 'png':
+        return MediaType('image', 'png');
+      case 'gif':
+        return MediaType('image', 'gif');
+      case 'webp':
+        return MediaType('image', 'webp');
+      default:
+        return MediaType('image', 'jpeg');
+    }
+  }
+  
   // ==================== 帖子相关 ====================
   
   /// 获取帖子列表
@@ -238,6 +326,74 @@ class ApiService {
       return PostModel.fromJson(jsonDecode(response.body));
     } else {
       throw Exception('获取帖子详情失败: ${response.body}');
+    }
+  }
+  
+  /// 获取当前用户发布的帖子列表
+  Future<List<PostModel>> getMyPosts({
+    int skip = 0,
+    int limit = 20,
+  }) async {
+    final queryParams = <String, String>{
+      'skip': skip.toString(),
+      'limit': limit.toString(),
+    };
+
+    final uri = Uri.parse('${ApiConfig.baseUrl}/posts/me').replace(
+      queryParameters: queryParams,
+    );
+
+    final response = await http.get(
+      uri,
+      headers: ApiConfig.getHeaders(token),
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => PostModel.fromJson(json)).toList();
+    } else {
+      throw Exception('获取我的帖子列表失败: ${response.body}');
+    }
+  }
+
+  /// 更新帖子
+  Future<PostModel> updatePost({
+    required int postId,
+    required String content,
+    required double amount,
+    required String mood,
+    required List<String> tags,
+    bool isAnonymous = false,
+  }) async {
+    final response = await http.put(
+      Uri.parse('${ApiConfig.baseUrl}/posts/$postId'),
+      headers: ApiConfig.getHeaders(token),
+      body: jsonEncode({
+        'content': content,
+        'amount': amount,
+        'mood': mood,
+        'tags': tags,
+        'is_anonymous': isAnonymous,
+      }),
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return PostModel.fromJson(data);
+    } else {
+      throw Exception('更新帖子失败: ${response.body}');
+    }
+  }
+
+  /// 删除帖子
+  Future<void> deletePost(int postId) async {
+    final response = await http.delete(
+      Uri.parse('${ApiConfig.baseUrl}/posts/$postId'),
+      headers: ApiConfig.getHeaders(token),
+    );
+
+    if (response.statusCode != 204) {
+      throw Exception('删除帖子失败: ${response.body}');
     }
   }
   

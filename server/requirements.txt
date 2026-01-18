@@ -6,6 +6,7 @@ pydantic-settings
 python-jose[cryptography]
 passlib[bcrypt]
 python-dotenv
+python-multipart
 # PostgreSQL 支持（可选，切换到 PostgreSQL 时需要）
 # psycopg2-binary
 

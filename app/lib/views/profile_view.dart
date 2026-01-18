@@ -16,6 +16,7 @@ class ProfileView extends StatelessWidget {
     this.onMyDiaryTap,
     this.onMyActivityTap,
     this.onSettingsTap,
+    this.onEditProfile,
   });
 
   final void Function(AppTab tab) onNavigate;
@@ -29,6 +30,7 @@ class ProfileView extends StatelessWidget {
   final VoidCallback? onMyDiaryTap;
   final VoidCallback? onMyActivityTap;
   final VoidCallback? onSettingsTap;
+  final VoidCallback? onEditProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -46,15 +48,13 @@ class ProfileView extends StatelessWidget {
               child: Column(
                 children: [
                   _buildUserHeader(),
-            const SizedBox(height: 24),
-            _buildQuickStats(),
-            const SizedBox(height: 24),
-            _buildAnnualReport(),
-            const SizedBox(height: 24),
-            _buildGridMenus(),
-            const SizedBox(height: 24),
+                  const SizedBox(height: 20),
+                  _buildQuickStats(),
+                  const SizedBox(height: 20),
                   _buildMedals(),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 20),
+                  _buildGridMenus(),
+                  const SizedBox(height: 20),
                 ],
               ),
             ),
@@ -102,22 +102,24 @@ class ProfileView extends StatelessWidget {
   Widget _buildUserHeader() {
     return Column(
       children: [
-        Stack(
-          children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF2BEE6C), width: 2),
-                image: const DecorationImage(
-                  image: NetworkImage(
-                    'https://picsum.photos/200/200?random=100',
+        GestureDetector(
+          onTap: onEditProfile,
+          child: Stack(
+            children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFF2BEE6C), width: 2),
+                  image: const DecorationImage(
+                    image: NetworkImage(
+                      'https://picsum.photos/200/200?random=100',
+                    ),
+                    fit: BoxFit.cover,
                   ),
-                  fit: BoxFit.cover,
                 ),
               ),
-            ),
             Positioned(
               bottom: -2,
               right: -2,
@@ -137,6 +139,7 @@ class ProfileView extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
         const SizedBox(height: 16),
         Row(
@@ -167,21 +170,6 @@ class ProfileView extends StatelessWidget {
           style: AppTextStyles.body.copyWith(
             color: Colors.grey,
             fontStyle: FontStyle.italic,
-          ),
-        ),
-        const SizedBox(height: 16),
-        OutlinedButton(
-          onPressed: () {},
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-            side: const BorderSide(color: Colors.white10),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: Text(
-            '编辑资料',
-            style: AppTextStyles.captionBold,
           ),
         ),
       ],
@@ -219,81 +207,14 @@ class ProfileView extends StatelessWidget {
     );
   }
 
-  Widget _buildAnnualReport() {
-    return Container(
-      height: 176,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        image: const DecorationImage(
-          image: NetworkImage('https://picsum.photos/800/400?random=200'),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withOpacity(0.4),
-              Colors.black.withOpacity(0.9),
-            ],
-          ),
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '2023年度亏损报告',
-              style: AppTextStyles.cardTitle.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '回顾你这一年跌宕起伏的韭菜生涯',
-              style: AppTextStyles.captionBold.copyWith(
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 12),
-            ElevatedButton(
-              onPressed: () {},
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2BEE6C),
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              child: Text(
-                '立即查看',
-                style: AppTextStyles.captionBold.copyWith(
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   Widget _buildGridMenus() {
     final menus = [
-      {'label': '我的日记', 'sub': '记录心碎瞬间', 'icon': Icons.book, 'onTap': () {}},
+      {'label': '我的日记', 'sub': '记录心碎瞬间', 'icon': Icons.book, 'onTap': onMyDiaryTap},
       {
         'label': '我的动态',
         'sub': '围观与互勉',
         'icon': Icons.history_edu,
-        'onTap': () {},
+        'onTap': onMyActivityTap,
       },
       {
         'label': '回血中心',
@@ -352,11 +273,14 @@ class ProfileView extends StatelessWidget {
                 fontWeight: FontWeight.w900,
               ),
             ),
-            Text(
-              '查看全部',
-              style: AppTextStyles.captionBold.copyWith(
-                color: Color(0xFF2BEE6C),
-                letterSpacing: 0.5,
+            InkWell(
+              onTap: onMedalWallTap,
+              child: Text(
+                '查看全部',
+                style: AppTextStyles.captionBold.copyWith(
+                  color: Color(0xFF2BEE6C),
+                  letterSpacing: 0.5,
+                ),
               ),
             ),
           ],

@@ -244,7 +244,7 @@ class _RecoveryCenterViewState extends State<RecoveryCenterView>
                       crossAxisCount: 2,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 0.75,
+                      childAspectRatio: 0.57,
                     ),
                     itemCount: _filteredGifts.length,
                     itemBuilder: (context, index) {
@@ -372,6 +372,7 @@ class _GiftCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.max,
         children: [
           Stack(
             children: [
@@ -381,7 +382,7 @@ class _GiftCard extends StatelessWidget {
                 ),
                 child: Image.network(
                   gift.imageUrl,
-                  height: 120,
+                  height: 110,
                   width: double.infinity,
                   fit: BoxFit.cover,
                 ),
@@ -409,89 +410,106 @@ class _GiftCard extends StatelessWidget {
                 ),
             ],
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  gift.name,
-                  style: AppTextStyles.bodyBold,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  gift.description,
-                  style: AppTextStyles.caption.copyWith(
-                    color: Colors.grey,
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.max,
+                children: [
+                  Text(
+                    gift.name,
+                    style: AppTextStyles.bodyBold.copyWith(fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const Spacer(),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (gift.pointsRequired > 0)
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.stars,
-                                size: 14,
-                                color: Colors.amber,
+                  const SizedBox(height: 2),
+                  Expanded(
+                    child: Text(
+                      gift.description,
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.grey,
+                        fontSize: 10,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (gift.pointsRequired > 0)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.stars,
+                                    size: 11,
+                                    color: Colors.amber,
+                                  ),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '${gift.pointsRequired}',
+                                    style: AppTextStyles.captionBold.copyWith(fontSize: 10),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${gift.pointsRequired}',
-                                style: AppTextStyles.captionBold,
-                              ),
-                            ],
-                          ),
-                        if (gift.recoveryRequired > 0)
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.volunteer_activism,
-                                size: 14,
-                                color: Color(0xFF2BEE6C),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                '¥${gift.recoveryRequired.toStringAsFixed(0)}',
-                                style: AppTextStyles.captionBold.copyWith(
-                                  color: Color(0xFF2BEE6C),
+                            if (gift.recoveryRequired > 0)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 1),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.volunteer_activism,
+                                      size: 11,
+                                      color: Color(0xFF2BEE6C),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      '¥${gift.recoveryRequired.toStringAsFixed(0)}',
+                                      style: AppTextStyles.captionBold.copyWith(
+                                        color: Color(0xFF2BEE6C),
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      ElevatedButton(
+                        onPressed: () => onExchange(gift),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF2BEE6C),
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
                           ),
-                      ],
-                    ),
-                    ElevatedButton(
-                      onPressed: () => onExchange(gift),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF2BEE6C),
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
+                          minimumSize: const Size(0, 26),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                         ),
-                        minimumSize: const Size(0, 32),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                        child: Text(
+                          '兑换',
+                          style: AppTextStyles.captionBold.copyWith(fontSize: 10),
                         ),
                       ),
-                      child: Text(
-                        '兑换',
-                        style: AppTextStyles.captionBold,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],

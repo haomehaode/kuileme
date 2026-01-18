@@ -20,7 +20,12 @@ def get_medals(
     """获取勋章列表（带用户进度）"""
     query = db.query(Medal)
     if rarity:
-        query = query.filter(Medal.rarity == MedalRarity(rarity))
+        try:
+            rarity_enum = MedalRarity(rarity)
+            query = query.filter(Medal.rarity == rarity_enum)
+        except ValueError:
+            # 无效的rarity值，忽略过滤
+            pass
 
     medals = query.all()
     result = []

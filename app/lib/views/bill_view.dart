@@ -1,10 +1,13 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/post.dart';
 import '../theme/text_styles.dart';
 
 enum TimeFilter { week, month, year, custom }
+
+enum SortOrder { amount, time }
 
 class BillView extends StatefulWidget {
   const BillView({
@@ -12,11 +15,13 @@ class BillView extends StatefulWidget {
     required this.posts,
     this.isLoggedIn = false,
     this.onLoginRequest,
+    this.onPostTap,
   });
 
   final List<PostModel> posts;
   final bool isLoggedIn;
   final VoidCallback? onLoginRequest;
+  final ValueChanged<PostModel>? onPostTap;
 
   @override
   State<BillView> createState() => _BillViewState();
@@ -26,37 +31,61 @@ class _BillViewState extends State<BillView> {
   TimeFilter _selectedFilter = TimeFilter.month;
   DateTime? _customStartDate;
   DateTime? _customEndDate;
+  SortOrder _sortOrder = SortOrder.amount;
+  
+  // 初始化当前时间范围
+  late DateTime _currentWeekStart;
+  late DateTime _currentMonth;
+  late int _currentYear;
+  
+  @override
+  void initState() {
+    super.initState();
+    final now = DateTime.now();
+    _currentWeekStart = _getWeekStart(now);
+    _currentMonth = DateTime(now.year, now.month, 1);
+    _currentYear = now.year;
+  }
+  
+  // 静态方法：获取一周的开始（周一）
+  static DateTime _getWeekStart(DateTime date) {
+    final weekday = date.weekday;
+    return date.subtract(Duration(days: weekday - 1));
+  }
+
+  // 获取当前筛选的日期范围
+  DateTimeRange get _currentDateRange {
+    switch (_selectedFilter) {
+      case TimeFilter.week:
+        final weekEnd = _currentWeekStart.add(const Duration(days: 6));
+        return DateTimeRange(start: _currentWeekStart, end: weekEnd);
+      case TimeFilter.month:
+        final monthEnd = DateTime(_currentMonth.year, _currentMonth.month + 1, 0);
+        return DateTimeRange(start: _currentMonth, end: monthEnd);
+      case TimeFilter.year:
+        final yearStart = DateTime(_currentYear, 1, 1);
+        final yearEnd = DateTime(_currentYear, 12, 31);
+        return DateTimeRange(start: yearStart, end: yearEnd);
+      case TimeFilter.custom:
+        if (_customStartDate != null && _customEndDate != null) {
+          return DateTimeRange(start: _customStartDate!, end: _customEndDate!);
+        }
+        final now = DateTime.now();
+        return DateTimeRange(start: now, end: now);
+    }
+  }
 
   // 根据时间筛选获取帖子列表
   List<PostModel> get _filteredPosts {
-    final now = DateTime.now();
-    DateTime startDate;
-
-    switch (_selectedFilter) {
-      case TimeFilter.week:
-        startDate = now.subtract(const Duration(days: 7));
-        break;
-      case TimeFilter.month:
-        startDate = DateTime(now.year, now.month, 1);
-        break;
-      case TimeFilter.year:
-        startDate = DateTime(now.year, 1, 1);
-        break;
-      case TimeFilter.custom:
-        if (_customStartDate != null && _customEndDate != null) {
-          return widget.posts.where((post) {
-            final postDate = _parsePostDate(post.time);
-            return postDate != null &&
-                postDate.isAfter(_customStartDate!.subtract(const Duration(days: 1))) &&
-                postDate.isBefore(_customEndDate!.add(const Duration(days: 1)));
-          }).toList();
-        }
-        return widget.posts;
-    }
+    final dateRange = _currentDateRange;
+    final startDate = dateRange.start;
+    final endDate = dateRange.end;
 
     return widget.posts.where((post) {
       final postDate = _parsePostDate(post.time);
-      return postDate != null && postDate.isAfter(startDate);
+      if (postDate == null) return false;
+      return postDate.isAfter(startDate.subtract(const Duration(days: 1))) &&
+          postDate.isBefore(endDate.add(const Duration(days: 1)));
     }).toList();
   }
 
@@ -152,10 +181,54 @@ class _BillViewState extends State<BillView> {
     };
   }
 
-  // 获取账单列表（按损失额倒序）
+  // 解析帖子时间字符串为DateTime（用于排序）
+  DateTime _parsePostDateForSort(PostModel post) {
+    // 尝试从 time 字符串解析
+    final timeStr = post.time;
+    if (timeStr.contains('刚刚') || timeStr.contains('Just now')) {
+      return DateTime.now();
+    }
+    if (timeStr.contains('分钟前')) {
+      final minutes = int.tryParse(timeStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return DateTime.now().subtract(Duration(minutes: minutes));
+    }
+    if (timeStr.contains('小时前')) {
+      final hours = int.tryParse(timeStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return DateTime.now().subtract(Duration(hours: hours));
+    }
+    if (timeStr.contains('天前')) {
+      final days = int.tryParse(timeStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+      return DateTime.now().subtract(Duration(days: days));
+    }
+    // 尝试解析绝对日期格式 YYYY-MM-DD
+    try {
+      final parts = timeStr.split('-');
+      if (parts.length == 3) {
+        final year = int.tryParse(parts[0]) ?? DateTime.now().year;
+        final month = int.tryParse(parts[1]) ?? DateTime.now().month;
+        final day = int.tryParse(parts[2]) ?? DateTime.now().day;
+        return DateTime(year, month, day);
+      }
+    } catch (e) {
+      // 解析失败，返回当前时间
+    }
+    return DateTime.now();
+  }
+
+  // 获取账单列表（支持按损失额或时间排序）
   List<PostModel> get _sortedPosts {
     final sorted = List<PostModel>.from(_filteredPosts);
-    sorted.sort((a, b) => b.amount.abs().compareTo(a.amount.abs()));
+    if (_sortOrder == SortOrder.amount) {
+      // 按损失额倒序
+      sorted.sort((a, b) => b.amount.abs().compareTo(a.amount.abs()));
+    } else {
+      // 按时间倒序（最新的在前）
+      sorted.sort((a, b) {
+        final dateA = _parsePostDateForSort(a);
+        final dateB = _parsePostDateForSort(b);
+        return dateB.compareTo(dateA);
+      });
+    }
     return sorted;
   }
 
@@ -179,7 +252,7 @@ class _BillViewState extends State<BillView> {
         content.contains('sh') || content.contains('sz')) {
       return {
         'icon': Icons.trending_down,
-        'color': const Color(0xFF00E677),
+        'color': const Color(0xFF2BEE6C),
       };
     } else if (tags.contains('币圈') || tags.contains('crypto') || 
                tags.contains('btc') || tags.contains('eth') ||
@@ -196,7 +269,7 @@ class _BillViewState extends State<BillView> {
     } else {
       return {
         'icon': Icons.trending_down,
-        'color': const Color(0xFF00E677),
+        'color': const Color(0xFF2BEE6C),
       };
     }
   }
@@ -223,11 +296,13 @@ class _BillViewState extends State<BillView> {
   // 分享账单
   Future<void> _shareBill() async {
     final dist = _distribution;
+    final periodText = _getPeriodText();
     final shareText = '''
 扎心亏损总账单
 
-当前周期亏损汇总: -${_formatCurrency(_currentPeriodLoss)} CNY
+$periodText亏损汇总: -${_formatCurrency(_currentPeriodLoss)} CNY
 新增痛点: $_newPainPoints次
+对比同期: ${_growthRate >= 0 ? '+' : ''}${_growthRate.toStringAsFixed(1)}%
 
 分布情况:
 A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
@@ -239,23 +314,99 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
 ''';
     
     try {
-      // 复制到剪贴板
-      await Clipboard.setData(ClipboardData(text: shareText));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('账单已复制到剪贴板，可以分享给好友了！'),
-            backgroundColor: Color(0xFF00E677),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
+      await Share.share(shareText);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('分享失败: $e')),
-        );
+      // 如果分享失败，尝试复制到剪贴板
+      try {
+        await Clipboard.setData(ClipboardData(text: shareText));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('账单已复制到剪贴板'),
+              backgroundColor: Color(0xFF2BEE6C),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e2) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('分享失败: $e2')),
+          );
+        }
       }
+    }
+  }
+
+  String _getPeriodText() {
+    switch (_selectedFilter) {
+      case TimeFilter.week:
+        final range = _currentDateRange;
+        final start = range.start;
+        final end = range.end;
+        // 如果同一个月，只显示一次月份
+        if (start.year == end.year && start.month == end.month) {
+          return '${start.year}/${start.month}/${start.day}-${end.day}';
+        } else {
+          return '${start.year}/${start.month}/${start.day}-${end.year}/${end.month}/${end.day}';
+        }
+      case TimeFilter.month:
+        return '${_currentMonth.year}/${_currentMonth.month}';
+      case TimeFilter.year:
+        return '$_currentYear';
+      case TimeFilter.custom:
+        if (_customStartDate != null && _customEndDate != null) {
+          final start = _customStartDate!;
+          final end = _customEndDate!;
+          if (start.year == end.year && start.month == end.month && start.day == end.day) {
+            return '${start.year}/${start.month}/${start.day}';
+          }
+          return '${start.year}/${start.month}/${start.day}-${end.year}/${end.month}/${end.day}';
+        }
+        return '自定义范围';
+    }
+  }
+
+  // 切换到上一周/下一周
+  void _navigateWeek(int direction) {
+    setState(() {
+      _currentWeekStart = _currentWeekStart.add(Duration(days: direction * 7));
+    });
+  }
+
+  // 切换到上一月/下一月
+  void _navigateMonth(int direction) {
+    setState(() {
+      if (direction > 0) {
+        _currentMonth = DateTime(_currentMonth.year, _currentMonth.month + 1, 1);
+      } else {
+        _currentMonth = DateTime(_currentMonth.year, _currentMonth.month - 1, 1);
+      }
+    });
+  }
+
+  // 切换到上一年/下一年
+  void _navigateYear(int direction) {
+    setState(() {
+      _currentYear += direction;
+    });
+  }
+
+  // 切换时间范围
+  void _navigateTimeRange(int direction) {
+    switch (_selectedFilter) {
+      case TimeFilter.week:
+        _navigateWeek(direction);
+        break;
+      case TimeFilter.month:
+        _navigateMonth(direction);
+        break;
+      case TimeFilter.year:
+        _navigateYear(direction);
+        break;
+      case TimeFilter.custom:
+        // 自定义范围不支持切换
+        break;
     }
   }
 
@@ -292,12 +443,12 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
                     // 亏损汇总
                     _buildTotalLossSection(),
                     
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     
                     // 分布图表
                     _buildDistributionChart(dist),
                     
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
                     
                     // 账单列表标题
                     _buildBillListHeader(),
@@ -334,17 +485,17 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
                 width: 120,
                 height: 120,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00E677).withOpacity(0.1),
+                  color: const Color(0xFF2BEE6C).withOpacity(0.1),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: const Color(0xFF00E677).withOpacity(0.3),
+                    color: const Color(0xFF2BEE6C).withOpacity(0.3),
                     width: 2,
                   ),
                 ),
                 child: const Icon(
                   Icons.receipt_long,
                   size: 60,
-                  color: Color(0xFF00E677),
+                  color: Color(0xFF2BEE6C),
                 ),
               ),
               const SizedBox(height: 32),
@@ -368,7 +519,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
               ElevatedButton(
                 onPressed: widget.onLoginRequest,
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00E677),
+                  backgroundColor: const Color(0xFF2BEE6C),
                   foregroundColor: Colors.black,
                   padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
                   shape: RoundedRectangleBorder(
@@ -402,6 +553,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             '扎心亏损总账单',
@@ -411,7 +563,9 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
           ),
           IconButton(
             onPressed: _shareBill,
-            icon: const Icon(Icons.share_outlined),
+            icon: const Icon(Icons.share_outlined, size: 20),
+            color: Colors.white,
+            tooltip: '分享账单',
           ),
         ],
       ),
@@ -420,7 +574,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
 
   Widget _buildTimeFilters() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(
@@ -444,25 +598,34 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
       onTap: () {
         setState(() {
           _selectedFilter = filter;
+          // 切换到当前时间范围
+          final now = DateTime.now();
+          if (filter == TimeFilter.week) {
+            _currentWeekStart = _getWeekStart(now);
+          } else if (filter == TimeFilter.month) {
+            _currentMonth = DateTime(now.year, now.month, 1);
+          } else if (filter == TimeFilter.year) {
+            _currentYear = now.year;
+          }
         });
       },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isActive
-              ? const Color(0xFF00E677).withOpacity(0.12)
+              ? const Color(0xFF2BEE6C).withOpacity(0.12)
               : Colors.black.withOpacity(0.6),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isActive
-                ? const Color(0xFF00E677).withOpacity(0.8)
-                : const Color(0xFF00E677).withOpacity(0.15),
+                ? const Color(0xFF2BEE6C).withOpacity(0.8)
+                : const Color(0xFF2BEE6C).withOpacity(0.15),
             width: 1,
           ),
           boxShadow: isActive
               ? [
                   BoxShadow(
-                    color: const Color(0xFF00E677).withOpacity(0.35),
+                    color: const Color(0xFF2BEE6C).withOpacity(0.35),
                     blurRadius: 12,
                     spreadRadius: 0,
                   ),
@@ -473,7 +636,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
           label,
           style: AppTextStyles.body.copyWith(
             color: isActive
-                ? const Color(0xFF00E677)
+                ? const Color(0xFF2BEE6C)
                 : Colors.white.withOpacity(0.6),
             fontSize: 14,
             fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
@@ -491,54 +654,64 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: isActive
-              ? const Color(0xFF00E677).withOpacity(0.12)
+              ? const Color(0xFF2BEE6C).withOpacity(0.12)
               : Colors.black.withOpacity(0.6),
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
             color: isActive
-                ? const Color(0xFF00E677).withOpacity(0.8)
-                : const Color(0xFF00E677).withOpacity(0.15),
+                ? const Color(0xFF2BEE6C).withOpacity(0.8)
+                : const Color(0xFF2BEE6C).withOpacity(0.15),
             width: 1,
           ),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2BEE6C).withOpacity(0.35),
+                    blurRadius: 12,
+                    spreadRadius: 0,
+                  ),
+                ]
+              : null,
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.calendar_month,
-              size: 18,
-              color: isActive
-                  ? const Color(0xFF00E677)
-                  : Colors.white.withOpacity(0.6),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              '自定义范围',
-              style: AppTextStyles.body.copyWith(
-                color: isActive
-                    ? const Color(0xFF00E677)
-                    : Colors.white.withOpacity(0.6),
-                fontSize: 14,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-              ),
-            ),
-          ],
+        child: Text(
+          '自定义',
+          style: AppTextStyles.body.copyWith(
+            color: isActive
+                ? const Color(0xFF2BEE6C)
+                : Colors.white.withOpacity(0.6),
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+          ),
         ),
       ),
     );
   }
 
-  // 选择自定义日期范围
+  // 选择自定义日期范围（点击自定义按钮时）
   Future<void> _selectCustomDateRange() async {
-    final DateTimeRange? picked = await showDateRangePicker(
+    setState(() {
+      _selectedFilter = TimeFilter.custom;
+      // 如果没有设置日期，默认使用最近一周
+      if (_customStartDate == null || _customEndDate == null) {
+        final now = DateTime.now();
+        _customEndDate = now;
+        _customStartDate = now.subtract(const Duration(days: 6));
+      }
+    });
+  }
+
+  // 选择开始日期
+  Future<void> _selectStartDate() async {
+    final DateTime? picked = await showDatePicker(
       context: context,
+      initialDate: _customStartDate ?? DateTime.now().subtract(const Duration(days: 6)),
       firstDate: DateTime(2020),
-      lastDate: DateTime.now(),
+      lastDate: _customEndDate ?? DateTime.now(),
       builder: (context, child) {
         return Theme(
           data: ThemeData.dark().copyWith(
             colorScheme: const ColorScheme.dark(
-              primary: Color(0xFF00E677),
+              primary: Color(0xFF2BEE6C),
               onPrimary: Colors.black,
               surface: Color(0xFF050809),
               onSurface: Colors.white,
@@ -551,67 +724,221 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
     
     if (picked != null) {
       setState(() {
-        _customStartDate = picked.start;
-        _customEndDate = picked.end;
-        _selectedFilter = TimeFilter.custom;
+        _customStartDate = picked;
+        // 如果开始日期晚于结束日期，调整结束日期
+        if (_customEndDate != null && picked.isAfter(_customEndDate!)) {
+          _customEndDate = picked;
+        }
+      });
+    }
+  }
+
+  // 选择结束日期
+  Future<void> _selectEndDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _customEndDate ?? DateTime.now(),
+      firstDate: _customStartDate ?? DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF2BEE6C),
+              onPrimary: Colors.black,
+              surface: Color(0xFF050809),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (picked != null) {
+      setState(() {
+        _customEndDate = picked;
+        // 如果结束日期早于开始日期，调整开始日期
+        if (_customStartDate != null && picked.isBefore(_customStartDate!)) {
+          _customStartDate = picked;
+        }
       });
     }
   }
 
   Widget _buildTotalLossSection() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Column(
         children: [
-          Text(
-            '当前周期亏损汇总 (CNY)',
-            style: AppTextStyles.body.copyWith(
-              color: const Color(0xFF9E9E9E),
-              fontSize: 14,
+          // 统一的时间显示布局：左右箭头占位，中间显示时间
+          SizedBox(
+            height: 24, // 固定高度，确保所有模式下高度一致
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // 左侧箭头（自定义模式下不显示，但保留占位空间）
+                if (_selectedFilter != TimeFilter.custom)
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, size: 16),
+                    color: Colors.white,
+                    onPressed: () => _navigateTimeRange(-1),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  )
+                else
+                  const SizedBox(width: 24, height: 24), // 占位空间，保持对齐
+                const SizedBox(width: 8),
+                
+                // 中间时间显示区域
+                if (_selectedFilter == TimeFilter.custom)
+                  // 自定义模式：显示开始和结束日期，每个都有向下箭头
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      // 开始日期
+                      GestureDetector(
+                        onTap: _selectStartDate,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              _customStartDate != null
+                                  ? '${_customStartDate!.year}/${_customStartDate!.month}/${_customStartDate!.day}'
+                                  : '开始日期',
+                              style: AppTextStyles.body.copyWith(
+                                color: Colors.grey,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              size: 20,
+                              color: Colors.grey,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Text(
+                        '-',
+                        style: AppTextStyles.body.copyWith(
+                          color: Colors.grey,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      // 结束日期
+                      GestureDetector(
+                        onTap: _selectEndDate,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              _customEndDate != null
+                                  ? '${_customEndDate!.year}/${_customEndDate!.month}/${_customEndDate!.day}'
+                                  : '结束日期',
+                              style: AppTextStyles.body.copyWith(
+                                color: Colors.grey,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.arrow_drop_down,
+                              size: 20,
+                              color: Colors.grey,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  // 非自定义模式：显示时间范围文本
+                  Text(
+                    _getPeriodText(),
+                    style: AppTextStyles.body.copyWith(
+                      color: Colors.grey,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                
+                const SizedBox(width: 8),
+                // 右侧箭头（自定义模式下不显示，但保留占位空间）
+                if (_selectedFilter != TimeFilter.custom)
+                  IconButton(
+                    icon: const Icon(Icons.arrow_forward_ios, size: 16),
+                    color: Colors.white,
+                    onPressed: () => _navigateTimeRange(1),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  )
+                else
+                  const SizedBox(width: 24, height: 24), // 占位空间，保持对齐
+              ],
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             '-${_formatCurrency(_currentPeriodLoss)}',
             style: AppTextStyles.displayNumber.copyWith(
-              color: const Color(0xFF00E677),
+              color: const Color(0xFF2BEE6C),
               fontSize: 48,
               fontWeight: FontWeight.w900,
               letterSpacing: -2,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.2),
+                  color: Colors.red.withOpacity(0.15),
                   border: Border.all(color: Colors.red.withOpacity(0.3)),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(
-                  '新增痛点: $_newPainPoints次 ↑',
-                  style: AppTextStyles.caption.copyWith(
-                    color: Colors.redAccent,
-                    fontSize: 11,
-                  ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.trending_up, size: 14, color: Colors.redAccent),
+                    const SizedBox(width: 4),
+                    Text(
+                      '新增痛点: $_newPainPoints次',
+                      style: AppTextStyles.caption.copyWith(
+                        color: Colors.redAccent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.05),
                   border: Border.all(color: Colors.white.withOpacity(0.1)),
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
                   '对比同期 ${_growthRate >= 0 ? '+' : ''}${_growthRate.toStringAsFixed(1)}%',
                   style: AppTextStyles.caption.copyWith(
-                    color: const Color(0xFF9E9E9E),
-                    fontSize: 11,
+                    color: Colors.grey,
+                    fontSize: 12,
                   ),
                 ),
               ),
@@ -624,20 +951,20 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
 
   Widget _buildDistributionChart(Map<String, double> dist) {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(24),
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 20),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E1E1E).withOpacity(0.4),
-        borderRadius: BorderRadius.circular(24),
+        color: const Color(0xFF111318),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: Colors.white.withOpacity(0.08),
+          color: Colors.white.withOpacity(0.1),
         ),
       ),
       child: Column(
         children: [
           SizedBox(
-            width: 180,
-            height: 180,
+            width: double.infinity,
+            height: 200,
             child: CustomPaint(
               painter: _DonutChartPainter(dist),
               child: Center(
@@ -705,7 +1032,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
           width: 10,
           height: 10,
           decoration: BoxDecoration(
-            color: const Color(0xFF00E677).withOpacity(opacity),
+            color: const Color(0xFF2BEE6C).withOpacity(opacity),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -723,7 +1050,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
 
   Widget _buildBillListHeader() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
@@ -735,11 +1062,34 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
               fontWeight: FontWeight.bold,
             ),
           ),
-          Text(
-            '按损失额倒序',
-            style: AppTextStyles.caption.copyWith(
-              color: const Color(0xFF9E9E9E),
-              fontSize: 11,
+          GestureDetector(
+            onTap: () {
+              // 切换排序方式
+              setState(() {
+                _sortOrder = _sortOrder == SortOrder.amount 
+                    ? SortOrder.time 
+                    : SortOrder.amount;
+              });
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _sortOrder == SortOrder.amount 
+                      ? '按损失额倒序' 
+                      : '按时间倒序',
+                  style: AppTextStyles.caption.copyWith(
+                    color: const Color(0xFF2BEE6C),
+                    fontSize: 11,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.swap_vert,
+                  size: 16,
+                  color: Color(0xFF2BEE6C),
+                ),
+              ],
             ),
           ),
         ],
@@ -763,23 +1113,29 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Column(
         children: posts.map((post) {
           final style = _getItemStyle(post);
           final heartBreakLevel = _getHeartBreakLevel(post.amount);
           
-          return Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1E1E).withOpacity(0.4),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: Colors.white.withOpacity(0.08),
+          return GestureDetector(
+            onTap: () {
+              if (widget.onPostTap != null) {
+                widget.onPostTap!(post);
+              }
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF111318),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.1),
+                ),
               ),
-            ),
-            child: Row(
+              child: Row(
               children: [
                 Container(
                   width: 44,
@@ -827,8 +1183,8 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
                               Icons.favorite,
                               size: 12,
                               color: i < heartBreakLevel
-                                  ? const Color(0xFF00E677)
-                                  : const Color(0xFF9E9E9E).withOpacity(0.3),
+                                  ? const Color(0xFF2BEE6C)
+                                  : Colors.grey.withOpacity(0.3),
                             );
                           }),
                         ],
@@ -842,7 +1198,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
                     Text(
                       '-${_formatCurrency(post.amount.abs())}',
                       style: AppTextStyles.subtitle.copyWith(
-                        color: const Color(0xFF00E677),
+                        color: const Color(0xFF2BEE6C),
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                       ),
@@ -858,6 +1214,7 @@ A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
                   ],
                 ),
               ],
+            ),
             ),
           );
         }).toList(),
@@ -876,8 +1233,11 @@ class _DonutChartPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = 70.0;
-    final strokeWidth = 14.0;
+    // 根据容器宽度动态计算半径，留出足够的边距
+    final availableWidth = size.width;
+    final maxRadius = (availableWidth / 2) - 20; // 留出20px边距
+    final radius = maxRadius.clamp(70.0, 90.0); // 最小70，最大90
+    final strokeWidth = 16.0;
 
     // 背景圆
     final backgroundPaint = Paint()
@@ -890,10 +1250,10 @@ class _DonutChartPainter extends CustomPainter {
     double startAngle = -pi / 2; // 从顶部开始
 
     final colors = [
-      const Color(0xFF00E677),
-      const Color(0xFF00E677).withOpacity(0.7),
-      const Color(0xFF00E677).withOpacity(0.4),
-      const Color(0xFF00E677).withOpacity(0.2),
+      const Color(0xFF2BEE6C),
+      const Color(0xFF2BEE6C).withOpacity(0.7),
+      const Color(0xFF2BEE6C).withOpacity(0.4),
+      const Color(0xFF2BEE6C).withOpacity(0.2),
     ];
 
     final values = [

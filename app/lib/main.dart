@@ -9,10 +9,12 @@ import 'views/community_post_view.dart';
 import 'views/post_detail_view.dart';
 import 'views/analysis_view.dart';
 import 'views/bill_view.dart';
+import 'views/bill_detail_view.dart';
 import 'views/login_view.dart';
 import 'views/reset_password_view.dart';
 import 'views/register_view.dart';
 import 'views/profile_view.dart';
+import 'views/edit_profile_view.dart';
 import 'views/splash_view.dart';
 import 'views/recovery_view.dart';
 import 'views/recovery_lottery_view.dart';
@@ -498,11 +500,41 @@ class _RootScaffoldState extends State<_RootScaffold> {
   void _navigateToMyActivity(BuildContext context) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder:
-            (context) => MyActivityView(
-              onBack: () => Navigator.of(context).pop(),
-              posts: _posts,
-            ),
+        builder: (context) => MyActivityView(
+          onBack: () => Navigator.of(context).pop(),
+          onPostTap: (post) {
+            // 跳转到帖子详情
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => PostDetailView(
+                  post: post,
+                  onBack: () => Navigator.of(context).pop(),
+                  onUpdatePost: (updatedPost) {
+                    // 更新帖子
+                    setState(() {
+                      final index = _posts.indexWhere((p) => p.id == updatedPost.id);
+                      if (index != -1) {
+                        _posts[index] = updatedPost;
+                      }
+                    });
+                  },
+                  onAddComment: (postId, comment) {
+                    // 添加评论
+                    setState(() {
+                      final index = _posts.indexWhere((p) => p.id == postId);
+                      if (index != -1) {
+                        _posts[index] = _posts[index].copyWith(
+                          comments: _posts[index].comments + 1,
+                        );
+                      }
+                    });
+                  },
+                ),
+              ),
+            );
+          },
+          apiService: _apiService,
+        ),
       ),
     );
   }
@@ -577,6 +609,40 @@ class _RootScaffoldState extends State<_RootScaffold> {
             Navigator.of(context).pop();
             _navigateToLogin(context);
           },
+        ),
+      ),
+    );
+  }
+
+  void _navigateToEditProfile(BuildContext context) async {
+    // 获取当前用户信息
+    Map<String, dynamic>? userData;
+    if (_apiService != null) {
+      try {
+        userData = await _apiService!.getCurrentUser();
+      } catch (e) {
+        print('获取用户信息失败: $e');
+      }
+    }
+    
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => EditProfileView(
+          onBack: () => Navigator.of(context).pop(),
+          onSave: () async {
+            Navigator.of(context).pop();
+            // 刷新用户数据
+            if (_apiService != null) {
+              try {
+                await _apiService!.getCurrentUser();
+                // 可以在这里更新UI状态
+                setState(() {});
+              } catch (e) {
+                print('刷新用户信息失败: $e');
+              }
+            }
+          },
+          initialData: userData,
         ),
       ),
     );
@@ -702,6 +768,41 @@ class _RootScaffoldState extends State<_RootScaffold> {
           posts: _posts,
           isLoggedIn: _isLoggedIn,
           onLoginRequest: () => _navigateToLogin(context),
+          onPostTap: (post) {
+            if (_apiService == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('请先登录'),
+                  backgroundColor: Colors.redAccent,
+                ),
+              );
+              return;
+            }
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (context) => BillDetailView(
+                  post: post,
+                  onBack: () => Navigator.of(context).pop(),
+                  apiService: _apiService!,
+                  onDelete: () {
+                    // 删除帖子
+                    setState(() {
+                      _posts.removeWhere((p) => p.id == post.id);
+                    });
+                  },
+                  onUpdate: (updatedPost) {
+                    // 更新帖子
+                    setState(() {
+                      final index = _posts.indexWhere((p) => p.id == updatedPost.id);
+                      if (index != -1) {
+                        _posts[index] = updatedPost;
+                      }
+                    });
+                  },
+                ),
+              ),
+            );
+          },
         );
         break;
       case AppTab.profile:
@@ -717,6 +818,7 @@ class _RootScaffoldState extends State<_RootScaffold> {
           onMyDiaryTap: () => _navigateToMyDiary(context),
           onMyActivityTap: () => _navigateToMyActivity(context),
           onSettingsTap: () => _navigateToSettings(context),
+          onEditProfile: () => _navigateToEditProfile(context),
         );
         break;
       case AppTab.recovery:

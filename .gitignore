@@ -60,3 +60,7 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# Uploaded files
+server/uploads/
+uploads/

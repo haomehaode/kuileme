@@ -25,3 +25,4 @@ class GrowthSummaryOut(BaseModel):
     points: int
     recovery_balance: float
     unlocked_medals_count: int
+    model_config = ConfigDict(from_attributes=True)
