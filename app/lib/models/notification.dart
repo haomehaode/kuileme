@@ -77,9 +77,12 @@ class NotificationModel {
     
     PostUser? fromUser;
     if (json['from_user'] != null) {
+      final avatarUrl = json['from_user']?['avatar'] as String?;
       fromUser = PostUser(
         name: json['from_user']?['nickname'] as String? ?? '用户',
-        avatar: json['from_user']?['avatar'] as String? ?? '',
+        avatar: (avatarUrl != null && avatarUrl.isNotEmpty) 
+            ? avatarUrl 
+            : 'https://picsum.photos/100/100?random=${json['from_user']?['id'] ?? 999}',
         level: json['from_user']?['level'] as int? ?? 1,
       );
     }

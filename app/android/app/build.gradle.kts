@@ -8,7 +8,7 @@ plugins {
 android {
     namespace = "com.example.kuleme"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    // ndkVersion = flutter.ndkVersion  // 暂时注释，避免 NDK 配置问题
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

@@ -35,7 +35,12 @@ class PostCard extends StatelessWidget {
             children: [
               CircleAvatar(
                 radius: 20,
-                backgroundImage: NetworkImage(post.user.avatar),
+                backgroundImage: (post.user.avatar.isNotEmpty)
+                    ? NetworkImage(post.user.avatar)
+                    : null,
+                child: (post.user.avatar.isEmpty)
+                    ? Icon(Icons.person, color: Colors.grey, size: 20)
+                    : null,
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -87,12 +92,27 @@ class PostCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: Stack(
                 children: [
-                  Image.network(
-                    post.image!,
-                    height: 180,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                  ),
+                  (post.image!.isNotEmpty)
+                      ? Image.network(
+                          post.image!,
+                          height: 180,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Container(
+                              height: 180,
+                              width: double.infinity,
+                              color: Colors.grey.withOpacity(0.2),
+                              child: Icon(Icons.broken_image, color: Colors.grey),
+                            );
+                          },
+                        )
+                      : Container(
+                          height: 180,
+                          width: double.infinity,
+                          color: Colors.grey.withOpacity(0.2),
+                          child: Icon(Icons.broken_image, color: Colors.grey),
+                        ),
                   Positioned(
                     right: 8,
                     top: 8,

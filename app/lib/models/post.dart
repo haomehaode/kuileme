@@ -87,10 +87,20 @@ class PostModel {
   factory PostModel.fromJson(Map<String, dynamic> json) {
     // 后端返回的格式：id, user_id, content, amount, mood, tags, likes, comments_count, created_at
     // 需要转换为前端模型格式
-    final tagsStr = json['tags'] as String? ?? '';
-    final tagsList = tagsStr.isNotEmpty 
-        ? tagsStr.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
-        : <String>[];
+    // tags 可能是列表或字符串，需要统一处理
+    List<String> tagsList = [];
+    final tagsValue = json['tags'];
+    if (tagsValue != null) {
+      if (tagsValue is List) {
+        // 如果是列表，直接转换
+        tagsList = tagsValue.map((e) => e.toString().trim()).where((e) => e.isNotEmpty).toList();
+      } else if (tagsValue is String) {
+        // 如果是字符串，按逗号分割
+        tagsList = tagsValue.isNotEmpty 
+            ? tagsValue.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList()
+            : <String>[];
+      }
+    }
     
     // 计算百分比（假设基于 amount，实际可能需要其他逻辑）
     final amount = (json['amount'] as num).toDouble();
@@ -101,9 +111,12 @@ class PostModel {
     final time = _formatTime(createdAt);
     
     // 用户信息（后端可能返回 user 对象，这里简化处理）
+    final avatarUrl = json['user']?['avatar'] as String?;
     final user = PostUser(
       name: json['user']?['nickname'] as String? ?? '匿名用户',
-      avatar: json['user']?['avatar'] as String? ?? '',
+      avatar: (avatarUrl != null && avatarUrl.isNotEmpty) 
+          ? avatarUrl 
+          : 'https://picsum.photos/100/100?random=${json['user_id'] ?? 999}',
       level: json['user']?['level'] as int? ?? 1,
     );
     
@@ -185,9 +198,12 @@ class CommentModel {
   
   /// 从 JSON 解析
   factory CommentModel.fromJson(Map<String, dynamic> json) {
+    final avatarUrl = json['user']?['avatar'] as String?;
     final user = PostUser(
       name: json['user']?['nickname'] as String? ?? '匿名用户',
-      avatar: json['user']?['avatar'] as String? ?? '',
+      avatar: (avatarUrl != null && avatarUrl.isNotEmpty) 
+          ? avatarUrl 
+          : 'https://picsum.photos/100/100?random=${json['user_id'] ?? 999}',
       level: json['user']?['level'] as int? ?? 1,
     );
     

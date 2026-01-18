@@ -18,13 +18,17 @@ class HomeView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 16),
+    return Column(
+      children: [
+        Builder(
+          builder: (context) => _buildHeader(context),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
           _buildMainStatsCard(),
           const SizedBox(height: 16),
           _buildRecoveryLotteryCard(),
@@ -33,25 +37,39 @@ class HomeView extends StatelessWidget {
           const SizedBox(height: 16),
           _buildQuickActions(),
           const SizedBox(height: 16),
-          _buildTrendingTopics(),
-        ],
-      ),
+                _buildTrendingTopics(),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          '亏了么',
-          style: AppTextStyles.cardTitle,
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
         ),
-        IconButton(
-          onPressed: onNotificationTap,
-          icon: const Icon(Icons.notifications_outlined),
-        ),
-      ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '亏了么',
+            style: AppTextStyles.cardTitle.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          IconButton(
+            onPressed: onNotificationTap,
+            icon: const Icon(Icons.notifications_outlined),
+          ),
+        ],
+      ),
     );
   }
 

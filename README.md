@@ -39,9 +39,9 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-## iOS 构建
+## 构建说明
 
-### 构建 IPA 文件
+### iOS 构建
 
 ```bash
 cd app
@@ -52,16 +52,33 @@ flutter build ipa --release
 
 详细说明请参考 [BUILD_IOS.md](./BUILD_IOS.md)
 
-## 下载 iOS 版本
+### Android 构建
+
+```bash
+cd app
+flutter build apk --release
+```
+
+构建完成后，APK 文件位于：`app/build/app/outputs/flutter-apk/app-release.apk`
+
+详细说明请参考 [BUILD_ANDROID.md](./BUILD_ANDROID.md)
+
+## 下载应用
 
 ### 当前版本: v0.1.0
 
+#### iOS
 - **未签名 IPA**: [kuleme-unsigned.ipa](./app/build/ios/ipa/kuleme-unsigned.ipa)
   - ⚠️ 注意：此版本未签名，无法直接在设备上安装
   - 需要手动签名或使用开发者账号重新构建
 
+#### Android
+- **APK**: 需要先构建（运行 `cd app && flutter build apk --release`）
+  - 构建完成后位于：`app/build/app/outputs/flutter-apk/app-release.apk`
+
 ### 安装说明
 
+#### iOS
 1. **使用开发者账号签名**：
    - 在 Xcode 中打开项目
    - 配置代码签名
@@ -70,6 +87,11 @@ flutter build ipa --release
 2. **使用模拟器版本**：
    - 下载模拟器版本：`app/build/ios/iphonesimulator/Runner.app`
    - 在 Xcode 模拟器中运行
+
+#### Android
+1. 在 Android 设备上启用"未知来源"安装
+2. 下载 APK 文件
+3. 点击安装
 
 ## 技术栈
 

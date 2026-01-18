@@ -1,79 +1,46 @@
 #!/bin/bash
+# 启动 FastAPI 服务脚本
 
-# Kuleme Backend Docker 启动脚本
+cd "$(dirname "$0")"
 
-echo "========================================"
-echo "  Kuleme Backend Docker 部署脚本"
-echo "========================================"
-echo ""
-
-# 检查 Docker 是否运行
-echo "检查 Docker 状态..."
-if ! docker ps > /dev/null 2>&1; then
-    echo "✗ Docker 未运行，请先启动 Docker Desktop"
-    exit 1
-fi
-echo "✓ Docker 正在运行"
-
-# 检查 .env 文件（可选，docker-compose.yml 有默认值）
-echo ""
-echo "检查环境变量配置..."
-if [ ! -f .env ]; then
-    echo "⚠ .env 文件不存在，将使用 docker-compose.yml 中的默认值"
-    echo "  提示：生产环境建议创建 .env 文件并修改敏感信息"
-else
-    echo "✓ .env 文件已存在"
+# 检查虚拟环境是否存在
+if [ ! -d "venv" ]; then
+    echo "❌ 虚拟环境不存在，正在创建..."
+    python3 -m venv venv
+    echo "✅ 虚拟环境创建完成！"
 fi
 
-# 停止现有容器（如果有）
-echo ""
-echo "停止现有容器..."
-docker compose down 2>/dev/null || docker-compose down 2>/dev/null
-echo "✓ 已清理"
+# 激活虚拟环境
+echo "🔄 激活虚拟环境..."
+source venv/bin/activate
 
-# 构建并启动
-echo ""
-echo "构建 Docker 镜像..."
-if command -v docker-compose &> /dev/null; then
-    docker-compose build
-else
-    docker compose build
+# 检查依赖是否已安装
+if ! python -c "import fastapi" 2>/dev/null; then
+    echo "📦 检测到依赖未安装，正在安装..."
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        echo "⚠️  使用默认源安装失败，尝试使用国内镜像源..."
+        pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    fi
+    echo "✅ 依赖安装完成！"
 fi
 
-echo ""
-echo "启动服务..."
-if command -v docker-compose &> /dev/null; then
-    docker-compose up -d
-else
-    docker compose up -d
-fi
+# 设置数据库类型为 SQLite（默认）
+export DATABASE_TYPE=${DATABASE_TYPE:-sqlite}
 
 echo ""
-echo "等待服务启动..."
-sleep 5
+echo "=========================================="
+echo "🚀 启动 FastAPI 服务..."
+echo "数据库类型: $DATABASE_TYPE"
+echo "=========================================="
+echo ""
+echo "📝 API 文档地址："
+echo "  - Swagger UI: http://localhost:8000/docs"
+echo "  - ReDoc: http://localhost:8000/redoc"
+echo ""
+echo "按 Ctrl+C 停止服务"
+echo ""
 
-# 检查服务状态
-echo ""
-echo "检查服务状态..."
-if command -v docker-compose &> /dev/null; then
-    docker-compose ps
-else
-    docker compose ps
-fi
-
-echo ""
-echo "========================================"
-echo "  部署完成！"
-echo "========================================"
-echo ""
-echo "API 文档: http://localhost:8000/docs"
-echo "查看日志: docker compose logs -f (或 docker-compose logs -f)"
-echo "停止服务: docker compose down (或 docker-compose down)"
-echo ""
-echo "数据库连接信息："
-echo "  主机: localhost"
-echo "  端口: 5432"
-echo "  数据库: kuleme"
-echo "  用户名: kuleme"
-echo "  密码: kuleme_password"
-echo ""
+# 启动服务
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000

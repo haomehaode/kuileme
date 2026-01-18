@@ -10,22 +10,39 @@ import '../models/medal.dart';
 
 /// API 基础配置
 class ApiConfig {
+  // 手动配置服务器地址（用于物理设备测试）
+  // 如果设置了此值，将优先使用此地址
+  // 例如：'http://192.168.1.100:8000'
+  static String? _customBaseUrl;
+  
+  /// 设置自定义服务器地址（用于物理设备测试）
+  static void setCustomBaseUrl(String? url) {
+    _customBaseUrl = url;
+  }
+  
   // 根据运行平台自动选择正确的 server 地址
   // iOS 模拟器/Web: localhost
+  // iOS 物理设备: 需要使用电脑的实际 IP 地址（通过 setCustomBaseUrl 设置）
   // Android 模拟器: 10.0.2.2 (Android 模拟器的特殊 IP，指向宿主机的 localhost)
-  // 物理设备: 需要手动配置为电脑的实际 IP 地址
+  // Android 物理设备: 需要使用电脑的实际 IP 地址（通过 setCustomBaseUrl 设置）
   static String get baseUrl {
+    // 如果设置了自定义地址，优先使用
+    if (_customBaseUrl != null && _customBaseUrl!.isNotEmpty) {
+      return _customBaseUrl!;
+    }
+    
     if (kIsWeb) {
       // Web 平台
       return 'http://localhost:8000';
     } else if (Platform.isAndroid) {
       // Android 平台（模拟器使用 10.0.2.2，物理设备需要配置实际 IP）
-      // 物理设备运行时，请将下面的 localhost 替换为你的电脑 IP 地址
-      // 例如：return 'http://192.168.1.100:8000';
+      // 物理设备运行时，请使用 setCustomBaseUrl('http://你的电脑IP:8000')
       return 'http://10.0.2.2:8000'; // Android 模拟器
     } else if (Platform.isIOS) {
-      // iOS 平台（模拟器和物理设备都可以使用 localhost）
-      return 'http://localhost:8000';
+      // iOS 平台
+      // 模拟器可以使用 localhost
+      // 物理设备需要使用电脑的实际 IP 地址，请使用 setCustomBaseUrl('http://你的电脑IP:8000')
+      return 'http://localhost:8000'; // iOS 模拟器
     } else {
       // 其他平台
       return 'http://localhost:8000';
@@ -75,7 +92,7 @@ class ApiService {
     }
   }
   
-  /// 登录
+  /// 登录（验证码方式）
   Future<Map<String, dynamic>> login(String phone, String code) async {
     final response = await http.post(
       Uri.parse('${ApiConfig.baseUrl}/auth/login'),
@@ -90,6 +107,47 @@ class ApiService {
       return jsonDecode(response.body);
     } else {
       throw Exception('登录失败: ${response.body}');
+    }
+  }
+  
+  /// 登录（账号密码方式）
+  Future<Map<String, dynamic>> loginWithPassword(String phone, String password) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/login/password'),
+      headers: ApiConfig.getHeaders(null),
+      body: jsonEncode({
+        'phone': phone,
+        'password': password,
+      }),
+    );
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('登录失败: ${response.body}');
+    }
+  }
+  
+  /// 重置密码
+  Future<Map<String, dynamic>> resetPassword(
+    String phone,
+    String code,
+    String newPassword,
+  ) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/auth/reset-password'),
+      headers: ApiConfig.getHeaders(null),
+      body: jsonEncode({
+        'phone': phone,
+        'code': code,
+        'new_password': newPassword,
+      }),
+    );
+    
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      throw Exception('重置密码失败: ${response.body}');
     }
   }
   
@@ -157,7 +215,7 @@ class ApiService {
         'content': content,
         'amount': amount,
         'mood': mood,
-        'tags': tags.join(','),
+        'tags': tags,  // 直接发送列表
         'is_anonymous': isAnonymous,
       }),
     );

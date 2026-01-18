@@ -34,30 +34,18 @@ class ProfileView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF050809),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.settings_outlined, color: Colors.grey),
-          onPressed: onSettingsTap,
-        ),
-        title: Text(
-          '个人中心',
-          style: AppTextStyles.appBarTitle,
-        ),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.notifications_outlined, color: Colors.grey),
-            onPressed: onNotificationTap,
+      appBar: null,
+      body: Column(
+        children: [
+          Builder(
+            builder: (context) => _buildHeader(context),
           ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            _buildUserHeader(),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _buildUserHeader(),
             const SizedBox(height: 24),
             _buildQuickStats(),
             const SizedBox(height: 24),
@@ -65,10 +53,48 @@ class ProfileView extends StatelessWidget {
             const SizedBox(height: 24),
             _buildGridMenus(),
             const SizedBox(height: 24),
-            _buildMedals(),
-            const SizedBox(height: 32),
-          ],
+                  _buildMedals(),
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
         ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '个人中心',
+            style: AppTextStyles.cardTitle.copyWith(
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.notifications_outlined),
+                onPressed: onNotificationTap,
+              ),
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                onPressed: onSettingsTap,
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

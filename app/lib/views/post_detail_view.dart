@@ -271,11 +271,16 @@ class _PostDetailViewState extends State<PostDetailView> {
                       color: const Color(0xFF06E076).withOpacity(0.2),
                       width: 2,
                     ),
-                    image: DecorationImage(
-                      image: NetworkImage(_post.user.avatar),
-                      fit: BoxFit.cover,
-                    ),
+                    image: (_post.user.avatar.isNotEmpty)
+                        ? DecorationImage(
+                            image: NetworkImage(_post.user.avatar),
+                            fit: BoxFit.cover,
+                          )
+                        : null,
                   ),
+                  child: (_post.user.avatar.isEmpty)
+                      ? Icon(Icons.person, color: Colors.grey, size: 24)
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -473,11 +478,26 @@ class _PostDetailViewState extends State<PostDetailView> {
           children: [
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _post.image!,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
+              child: (_post.image != null && _post.image!.isNotEmpty)
+                  ? Image.network(
+                      _post.image!,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          width: double.infinity,
+                          height: 200,
+                          color: Colors.grey.withOpacity(0.2),
+                          child: Icon(Icons.broken_image, color: Colors.grey),
+                        );
+                      },
+                    )
+                  : Container(
+                      width: double.infinity,
+                      height: 200,
+                      color: Colors.grey.withOpacity(0.2),
+                      child: Icon(Icons.broken_image, color: Colors.grey),
+                    ),
             ),
             Positioned(
               bottom: 12,
@@ -736,11 +756,16 @@ class _PostDetailViewState extends State<PostDetailView> {
             height: 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              image: DecorationImage(
-                image: NetworkImage(comment.user.avatar),
-                fit: BoxFit.cover,
-              ),
+              image: (comment.user.avatar.isNotEmpty)
+                  ? DecorationImage(
+                      image: NetworkImage(comment.user.avatar),
+                      fit: BoxFit.cover,
+                    )
+                  : null,
             ),
+            child: (comment.user.avatar.isEmpty)
+                ? Icon(Icons.person, color: Colors.grey, size: 20)
+                : null,
           ),
           const SizedBox(width: 12),
           Expanded(

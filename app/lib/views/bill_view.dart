@@ -1,9 +1,12 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/post.dart';
 import '../theme/text_styles.dart';
 
-class BillView extends StatelessWidget {
+enum TimeFilter { week, month, year, custom }
+
+class BillView extends StatefulWidget {
   const BillView({
     super.key,
     required this.posts,
@@ -15,33 +18,116 @@ class BillView extends StatelessWidget {
   final bool isLoggedIn;
   final VoidCallback? onLoginRequest;
 
-  // 计算累计总亏损
-  double get _totalLoss {
-    return posts.fold(0.0, (sum, post) => sum + post.amount.abs());
+  @override
+  State<BillView> createState() => _BillViewState();
+}
+
+class _BillViewState extends State<BillView> {
+  TimeFilter _selectedFilter = TimeFilter.month;
+  DateTime? _customStartDate;
+  DateTime? _customEndDate;
+
+  // 根据时间筛选获取帖子列表
+  List<PostModel> get _filteredPosts {
+    final now = DateTime.now();
+    DateTime startDate;
+
+    switch (_selectedFilter) {
+      case TimeFilter.week:
+        startDate = now.subtract(const Duration(days: 7));
+        break;
+      case TimeFilter.month:
+        startDate = DateTime(now.year, now.month, 1);
+        break;
+      case TimeFilter.year:
+        startDate = DateTime(now.year, 1, 1);
+        break;
+      case TimeFilter.custom:
+        if (_customStartDate != null && _customEndDate != null) {
+          return widget.posts.where((post) {
+            final postDate = _parsePostDate(post.time);
+            return postDate != null &&
+                postDate.isAfter(_customStartDate!.subtract(const Duration(days: 1))) &&
+                postDate.isBefore(_customEndDate!.add(const Duration(days: 1)));
+          }).toList();
+        }
+        return widget.posts;
+    }
+
+    return widget.posts.where((post) {
+      final postDate = _parsePostDate(post.time);
+      return postDate != null && postDate.isAfter(startDate);
+    }).toList();
   }
 
-  // 计算本月新增亏损（简化：假设所有帖子都是本月的）
-  double get _monthlyLoss {
-    return posts.fold(0.0, (sum, post) => sum + post.amount.abs());
+  // 解析帖子时间字符串为DateTime
+  DateTime? _parsePostDate(String timeStr) {
+    // 处理相对时间
+    if (timeStr.contains('刚刚') || timeStr.contains('Just now')) {
+      return DateTime.now();
+    }
+    if (timeStr.contains('Today') || timeStr.contains('今天')) {
+      return DateTime.now();
+    }
+    if (timeStr.contains('Yesterday') || timeStr.contains('昨天')) {
+      return DateTime.now().subtract(const Duration(days: 1));
+    }
+    
+    // 尝试解析绝对时间（如果有的话）
+    // 这里简化处理，实际应该从PostModel获取真实的创建时间
+    return DateTime.now();
+  }
+
+  // 计算当前周期亏损汇总
+  double get _currentPeriodLoss {
+    return _filteredPosts.fold(0.0, (sum, post) => sum + post.amount.abs());
+  }
+
+  // 计算新增痛点次数
+  int get _newPainPoints {
+    return _filteredPosts.length;
+  }
+
+  // 计算对比同期增长率（简化：假设对比上个月）
+  double get _growthRate {
+    final now = DateTime.now();
+    final lastMonthStart = DateTime(now.year, now.month - 1, 1);
+    final lastMonthEnd = DateTime(now.year, now.month, 0);
+    
+    final lastMonthPosts = widget.posts.where((post) {
+      final postDate = _parsePostDate(post.time);
+      return postDate != null &&
+          postDate.isAfter(lastMonthStart) &&
+          postDate.isBefore(lastMonthEnd.add(const Duration(days: 1)));
+    }).toList();
+    
+    final lastMonthLoss = lastMonthPosts.fold(0.0, (sum, post) => sum + post.amount.abs());
+    
+    if (lastMonthLoss == 0) return 0;
+    return ((_currentPeriodLoss - lastMonthLoss) / lastMonthLoss * 100);
   }
 
   // 计算分布数据
   Map<String, double> get _distribution {
-    // 简化：根据标签或内容分类
     double aStock = 0;
     double usStock = 0;
     double crypto = 0;
     double fund = 0;
 
-    for (final post in posts) {
+    for (final post in _filteredPosts) {
       final content = post.content.toLowerCase();
       final tags = post.tags.map((t) => t.toLowerCase()).toList();
       
-      if (tags.contains('a股') || tags.contains('股票') || content.contains('600') || content.contains('000')) {
+      if (tags.contains('a股') || tags.contains('股票') || 
+          content.contains('600') || content.contains('000') ||
+          content.contains('sh') || content.contains('sz')) {
         aStock += post.amount.abs();
-      } else if (tags.contains('美股') || tags.contains('nasdaq') || tags.contains('sp500')) {
+      } else if (tags.contains('美股') || tags.contains('nasdaq') || 
+                 tags.contains('sp500') || tags.contains('nyse')) {
         usStock += post.amount.abs();
-      } else if (tags.contains('币圈') || tags.contains('crypto') || tags.contains('btc') || tags.contains('eth')) {
+      } else if (tags.contains('币圈') || tags.contains('crypto') || 
+                 tags.contains('btc') || tags.contains('eth') ||
+                 tags.contains('比特币') || tags.contains('以太坊')) {
         crypto += post.amount.abs();
       } else {
         fund += post.amount.abs();
@@ -50,7 +136,6 @@ class BillView extends StatelessWidget {
 
     final total = aStock + usStock + crypto + fund;
     if (total == 0) {
-      // 默认分布
       return {
         'aStock': 0.45,
         'usStock': 0.30,
@@ -69,7 +154,7 @@ class BillView extends StatelessWidget {
 
   // 获取账单列表（按损失额倒序）
   List<PostModel> get _sortedPosts {
-    final sorted = List<PostModel>.from(posts);
+    final sorted = List<PostModel>.from(_filteredPosts);
     sorted.sort((a, b) => b.amount.abs().compareTo(a.amount.abs()));
     return sorted;
   }
@@ -89,12 +174,16 @@ class BillView extends StatelessWidget {
     final content = post.content.toLowerCase();
     final tags = post.tags.map((t) => t.toLowerCase()).toList();
     
-    if (tags.contains('a股') || tags.contains('股票') || content.contains('600') || content.contains('000')) {
+    if (tags.contains('a股') || tags.contains('股票') || 
+        content.contains('600') || content.contains('000') ||
+        content.contains('sh') || content.contains('sz')) {
       return {
         'icon': Icons.trending_down,
-        'color': const Color(0xFF2BEE6C),
+        'color': const Color(0xFF00E677),
       };
-    } else if (tags.contains('币圈') || tags.contains('crypto') || tags.contains('btc') || tags.contains('eth')) {
+    } else if (tags.contains('币圈') || tags.contains('crypto') || 
+               tags.contains('btc') || tags.contains('eth') ||
+               tags.contains('比特币') || tags.contains('以太坊')) {
       return {
         'icon': Icons.currency_bitcoin,
         'color': Colors.orange,
@@ -106,245 +195,469 @@ class BillView extends StatelessWidget {
       };
     } else {
       return {
-        'icon': Icons.close,
-        'color': Colors.grey,
+        'icon': Icons.trending_down,
+        'color': const Color(0xFF00E677),
       };
     }
   }
 
-  // 格式化时间（从PostModel的time字符串解析）
+  // 格式化时间显示
   String _formatTime(String timeStr) {
-    // PostModel的time已经是格式化后的字符串，直接返回
-    // 如果需要更详细的格式，可以解析time字符串
-    if (timeStr == '刚刚' || timeStr == 'Just now') {
+    if (timeStr.contains('Today') || timeStr.contains('今天')) {
+      return 'Today';
+    }
+    if (timeStr.contains('Yesterday') || timeStr.contains('昨天')) {
+      return 'Yesterday';
+    }
+    if (timeStr.contains('刚刚') || timeStr.contains('Just now')) {
       return 'Just now';
     }
-    // 尝试解析包含时间的字符串
-    if (timeStr.contains('Yesterday')) {
-      return timeStr;
-    }
-    if (timeStr.contains('Today')) {
-      return timeStr;
-    }
-    // 其他情况直接返回
     return timeStr;
   }
+
+  // 格式化货币
+  String _formatCurrency(double amount) {
+    return amount.toStringAsFixed(2);
+  }
+
+  // 分享账单
+  Future<void> _shareBill() async {
+    final dist = _distribution;
+    final shareText = '''
+扎心亏损总账单
+
+当前周期亏损汇总: -${_formatCurrency(_currentPeriodLoss)} CNY
+新增痛点: $_newPainPoints次
+
+分布情况:
+A股: ${(dist['aStock']! * 100).toStringAsFixed(0)}%
+美股: ${(dist['usStock']! * 100).toStringAsFixed(0)}%
+币圈: ${(dist['crypto']! * 100).toStringAsFixed(0)}%
+基金: ${(dist['fund']! * 100).toStringAsFixed(0)}%
+
+来自"亏了么"App
+''';
+    
+    try {
+      // 复制到剪贴板
+      await Clipboard.setData(ClipboardData(text: shareText));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('账单已复制到剪贴板，可以分享给好友了！'),
+            backgroundColor: Color(0xFF00E677),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('分享失败: $e')),
+        );
+      }
+    }
+  }
+
 
   @override
   Widget build(BuildContext context) {
     // 如果未登录，显示登录提示
-    if (!isLoggedIn) {
+    if (!widget.isLoggedIn) {
       return _buildLoginPrompt(context);
     }
 
     final dist = _distribution;
-    final sortedPosts = _sortedPosts.take(10).toList(); // 只显示前10条
+    final sortedPosts = _sortedPosts.take(20).toList(); // 显示前20条
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 16),
-          _buildHeader(),
-          const SizedBox(height: 16),
-          _buildTotalLossSection(),
-          const SizedBox(height: 32),
-          _buildDistributionChart(dist),
-          const SizedBox(height: 32),
-          _buildBillListHeader(),
-          const SizedBox(height: 12),
-          _buildBillList(sortedPosts),
-          const SizedBox(height: 100), // 为底部导航栏留空间
-        ],
+    return Scaffold(
+      backgroundColor: const Color(0xFF050809),
+      body: SafeArea(
+        child: Column(
+          children: [
+            // 头部
+            Builder(
+              builder: (context) => _buildHeader(context),
+            ),
+            
+            // 时间筛选器
+            _buildTimeFilters(),
+            
+            // 主内容区域
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  children: [
+                    // 亏损汇总
+                    _buildTotalLossSection(),
+                    
+                    const SizedBox(height: 16),
+                    
+                    // 分布图表
+                    _buildDistributionChart(dist),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // 账单列表标题
+                    _buildBillListHeader(),
+                    
+                    const SizedBox(height: 12),
+                    
+                    // 账单列表
+                    _buildBillList(sortedPosts),
+                    
+                    const SizedBox(height: 100), // 为底部导航栏留空间
+                  ],
+                ),
+              ),
+            ),
+            
+          ],
+        ),
       ),
     );
   }
+
 
   Widget _buildLoginPrompt(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+    return Scaffold(
+      backgroundColor: const Color(0xFF050809),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(height: 100),
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E677).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFF00E677).withOpacity(0.3),
+                    width: 2,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.receipt_long,
+                  size: 60,
+                  color: Color(0xFF00E677),
+                ),
+              ),
+              const SizedBox(height: 32),
+              Text(
+                '查看账单需要登录',
+                style: AppTextStyles.pageTitle.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '登录后可以查看您的完整亏损账单\n包括累计亏损、分布图表和详细记录',
+                style: AppTextStyles.body.copyWith(
+                  color: const Color(0xFF9ABCAB),
+                  height: 1.5,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 48),
+              ElevatedButton(
+                onPressed: widget.onLoginRequest,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF00E677),
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  '立即登录',
+                  style: AppTextStyles.subtitle.copyWith(
+                    color: Colors.black,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        border: Border(
+          bottom: BorderSide(color: Colors.white.withOpacity(0.1)),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const SizedBox(height: 100),
-          // 图标
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              color: const Color(0xFF2BEE6C).withOpacity(0.1),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: const Color(0xFF2BEE6C).withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-            child: const Icon(
-              Icons.receipt_long,
-              size: 60,
-              color: Color(0xFF2BEE6C),
-            ),
-          ),
-          const SizedBox(height: 32),
           Text(
-            '查看账单需要登录',
-            style: AppTextStyles.pageTitle.copyWith(
-              fontWeight: FontWeight.bold,
+            '扎心亏损总账单',
+            style: AppTextStyles.cardTitle.copyWith(
+              fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 12),
-          Text(
-            '登录后可以查看您的完整亏损账单\n包括累计亏损、分布图表和详细记录',
-            style: AppTextStyles.body.copyWith(
-              color: Colors.grey,
-              height: 1.5,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 48),
-          ElevatedButton(
-            onPressed: onLoginRequest,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2BEE6C),
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              elevation: 0,
-            ),
-            child: Text(
-              '立即登录',
-              style: AppTextStyles.subtitle,
-            ),
-          ),
-          const SizedBox(height: 24),
-          TextButton(
-            onPressed: onLoginRequest,
-            child: Text(
-              '使用手机号登录',
-              style: AppTextStyles.body.copyWith(
-                color: Color(0xFF2BEE6C),
-              ),
-            ),
+          IconButton(
+            onPressed: _shareBill,
+            icon: const Icon(Icons.share_outlined),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          '扎心亏损总账单',
-          style: AppTextStyles.cardTitle.copyWith(
-            fontWeight: FontWeight.bold,
-          ),
+  Widget _buildTimeFilters() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _buildTimeFilterCapsule('周', TimeFilter.week),
+            const SizedBox(width: 8),
+            _buildTimeFilterCapsule('月', TimeFilter.month),
+            const SizedBox(width: 8),
+            _buildTimeFilterCapsule('年', TimeFilter.year),
+            const SizedBox(width: 8),
+            _buildCustomDateButton(),
+          ],
         ),
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: const Icon(
-            Icons.notifications_outlined,
-            color: Colors.grey,
-            size: 20,
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildTotalLossSection() {
-    return Column(
-      children: [
-        Text(
-          '累计总亏损 (CNY)',
+  Widget _buildTimeFilterCapsule(String label, TimeFilter filter) {
+    final isActive = _selectedFilter == filter;
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _selectedFilter = filter;
+        });
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isActive
+              ? const Color(0xFF00E677).withOpacity(0.12)
+              : Colors.black.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive
+                ? const Color(0xFF00E677).withOpacity(0.8)
+                : const Color(0xFF00E677).withOpacity(0.15),
+            width: 1,
+          ),
+          boxShadow: isActive
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF00E677).withOpacity(0.35),
+                    blurRadius: 12,
+                    spreadRadius: 0,
+                  ),
+                ]
+              : null,
+        ),
+        child: Text(
+          label,
           style: AppTextStyles.body.copyWith(
-            color: Colors.grey,
+            color: isActive
+                ? const Color(0xFF00E677)
+                : Colors.white.withOpacity(0.6),
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          '-${_formatCurrency(_totalLoss)}',
-          style: AppTextStyles.displayNumber.copyWith(
-            color: Color(0xFF2BEE6C),
-            letterSpacing: -1,
+      ),
+    );
+  }
+
+  Widget _buildCustomDateButton() {
+    final isActive = _selectedFilter == TimeFilter.custom;
+    return GestureDetector(
+      onTap: _selectCustomDateRange,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: isActive
+              ? const Color(0xFF00E677).withOpacity(0.12)
+              : Colors.black.withOpacity(0.6),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isActive
+                ? const Color(0xFF00E677).withOpacity(0.8)
+                : const Color(0xFF00E677).withOpacity(0.15),
+            width: 1,
           ),
         ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.red.withOpacity(0.2),
-                border: Border.all(color: Colors.red.withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '本月新增: ¥${_formatCurrency(_monthlyLoss)} ↑',
-                style: AppTextStyles.caption.copyWith(
-                  color: Colors.redAccent,
-                ),
-              ),
+            Icon(
+              Icons.calendar_month,
+              size: 18,
+              color: isActive
+                  ? const Color(0xFF00E677)
+                  : Colors.white.withOpacity(0.6),
             ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.05),
-                border: Border.all(color: Colors.white.withOpacity(0.1)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                '对比上月 +12.5%',
-                style: AppTextStyles.caption.copyWith(
-                  color: Colors.grey,
-                ),
+            const SizedBox(width: 6),
+            Text(
+              '自定义范围',
+              style: AppTextStyles.body.copyWith(
+                color: isActive
+                    ? const Color(0xFF00E677)
+                    : Colors.white.withOpacity(0.6),
+                fontSize: 14,
+                fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
               ),
             ),
           ],
         ),
-      ],
+      ),
+    );
+  }
+
+  // 选择自定义日期范围
+  Future<void> _selectCustomDateRange() async {
+    final DateTimeRange? picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: const ColorScheme.dark(
+              primary: Color(0xFF00E677),
+              onPrimary: Colors.black,
+              surface: Color(0xFF050809),
+              onSurface: Colors.white,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (picked != null) {
+      setState(() {
+        _customStartDate = picked.start;
+        _customEndDate = picked.end;
+        _selectedFilter = TimeFilter.custom;
+      });
+    }
+  }
+
+  Widget _buildTotalLossSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          Text(
+            '当前周期亏损汇总 (CNY)',
+            style: AppTextStyles.body.copyWith(
+              color: const Color(0xFF9E9E9E),
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '-${_formatCurrency(_currentPeriodLoss)}',
+            style: AppTextStyles.displayNumber.copyWith(
+              color: const Color(0xFF00E677),
+              fontSize: 48,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -2,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.2),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '新增痛点: $_newPainPoints次 ↑',
+                  style: AppTextStyles.caption.copyWith(
+                    color: Colors.redAccent,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  border: Border.all(color: Colors.white.withOpacity(0.1)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '对比同期 ${_growthRate >= 0 ? '+' : ''}${_growthRate.toStringAsFixed(1)}%',
+                  style: AppTextStyles.caption.copyWith(
+                    color: const Color(0xFF9E9E9E),
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildDistributionChart(Map<String, double> dist) {
     return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.04),
+        color: const Color(0xFF1E1E1E).withOpacity(0.4),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withOpacity(0.08)),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.08),
+        ),
       ),
       child: Column(
         children: [
           SizedBox(
             width: 180,
             height: 180,
-              child: CustomPaint(
+            child: CustomPaint(
               painter: _DonutChartPainter(dist),
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      'DISTRIBUTION',
+                      'STATUS',
                       style: AppTextStyles.label.copyWith(
+                        color: const Color(0xFF9E9E9E),
+                        fontSize: 10,
                         letterSpacing: 2,
                       ),
                     ),
-                    SizedBox(height: 4),
+                    const SizedBox(height: 4),
                     Text(
                       '全线飘绿',
                       style: AppTextStyles.sectionTitle.copyWith(
+                        color: Colors.white,
+                        fontSize: 18,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
@@ -361,26 +674,27 @@ class BillView extends StatelessWidget {
   }
 
   Widget _buildDistributionLegend(Map<String, double> dist) {
-    return Column(
-      children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildLegendItem('A股', (dist['aStock']! * 100).toStringAsFixed(0), 1.0),
-            const SizedBox(width: 32),
-            _buildLegendItem('美股', (dist['usStock']! * 100).toStringAsFixed(0), 0.7),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            _buildLegendItem('币圈', (dist['crypto']! * 100).toStringAsFixed(0), 0.4),
-            const SizedBox(width: 32),
-            _buildLegendItem('基金', (dist['fund']! * 100).toStringAsFixed(0), 0.2),
-          ],
-        ),
-      ],
+    return SizedBox(
+      width: 260,
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildLegendItem('A股', (dist['aStock']! * 100).toStringAsFixed(0), 1.0),
+              _buildLegendItem('美股', (dist['usStock']! * 100).toStringAsFixed(0), 0.7),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildLegendItem('币圈', (dist['crypto']! * 100).toStringAsFixed(0), 0.4),
+              _buildLegendItem('基金', (dist['fund']! * 100).toStringAsFixed(0), 0.2),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
@@ -391,7 +705,7 @@ class BillView extends StatelessWidget {
           width: 10,
           height: 10,
           decoration: BoxDecoration(
-            color: const Color(0xFF2BEE6C).withOpacity(opacity),
+            color: const Color(0xFF00E677).withOpacity(opacity),
             borderRadius: BorderRadius.circular(2),
           ),
         ),
@@ -399,7 +713,8 @@ class BillView extends StatelessWidget {
         Text(
           '$label ($percent%)',
           style: AppTextStyles.caption.copyWith(
-            color: Colors.grey,
+            color: const Color(0xFF9E9E9E),
+            fontSize: 12,
           ),
         ),
       ],
@@ -407,135 +722,149 @@ class BillView extends StatelessWidget {
   }
 
   Widget _buildBillListHeader() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          '扎心账单单条',
-          style: AppTextStyles.sectionTitle.copyWith(
-            fontWeight: FontWeight.bold,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            '扎心账单单条',
+            style: AppTextStyles.sectionTitle.copyWith(
+              color: Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-        ),
-        Text(
-          '按损失额倒序',
-          style: AppTextStyles.caption.copyWith(
-            color: Colors.grey,
+          Text(
+            '按损失额倒序',
+            style: AppTextStyles.caption.copyWith(
+              color: const Color(0xFF9E9E9E),
+              fontSize: 11,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _buildBillList(List<PostModel> posts) {
     if (posts.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(32),
+      return Padding(
+        padding: const EdgeInsets.all(32),
+        child: Center(
           child: Text(
             '暂无账单记录',
-            style: TextStyle(color: Colors.grey),
+            style: AppTextStyles.body.copyWith(
+              color: const Color(0xFF9E9E9E),
+            ),
           ),
         ),
       );
     }
 
-    return Column(
-      children: posts.map((post) {
-        final style = _getItemStyle(post);
-        final heartBreakLevel = _getHeartBreakLevel(post.amount);
-        
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.04),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: (style['color'] as Color).withOpacity(0.1),
-                  border: Border.all(
-                    color: (style['color'] as Color).withOpacity(0.2),
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  style['icon'] as IconData,
-                  color: style['color'] as Color,
-                  size: 24,
-                ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: posts.map((post) {
+          final style = _getItemStyle(post);
+          final heartBreakLevel = _getHeartBreakLevel(post.amount);
+          
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E).withOpacity(0.4),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.08),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: (style['color'] as Color).withOpacity(0.1),
+                    border: Border.all(
+                      color: (style['color'] as Color).withOpacity(0.2),
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    style['icon'] as IconData,
+                    color: style['color'] as Color,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        post.content.length > 25 
+                            ? '${post.content.substring(0, 25)}...' 
+                            : post.content,
+                        style: AppTextStyles.bodyBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text(
+                            '心碎指数',
+                            style: AppTextStyles.caption.copyWith(
+                              color: const Color(0xFF9E9E9E),
+                              fontSize: 10,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          ...List.generate(5, (i) {
+                            return Icon(
+                              Icons.favorite,
+                              size: 12,
+                              color: i < heartBreakLevel
+                                  ? const Color(0xFF00E677)
+                                  : const Color(0xFF9E9E9E).withOpacity(0.3),
+                            );
+                          }),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      post.content.length > 20 
-                          ? '${post.content.substring(0, 20)}...' 
-                          : post.content,
-                      style: AppTextStyles.bodyBold,
+                      '-${_formatCurrency(post.amount.abs())}',
+                      style: AppTextStyles.subtitle.copyWith(
+                        color: const Color(0xFF00E677),
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Text(
-                          '心碎指数',
-                          style: AppTextStyles.label.copyWith(
-                            color: Colors.grey,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        ...List.generate(5, (i) {
-                          return Icon(
-                            Icons.favorite,
-                            size: 12,
-                            color: i < heartBreakLevel
-                                ? const Color(0xFF2BEE6C)
-                                : Colors.grey.withOpacity(0.3),
-                          );
-                        }),
-                      ],
+                    Text(
+                      _formatTime(post.time).toUpperCase(),
+                      style: AppTextStyles.caption.copyWith(
+                        color: const Color(0xFF9E9E9E),
+                        fontSize: 10,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    '-${_formatCurrency(post.amount.abs())}',
-                    style: AppTextStyles.subtitle.copyWith(
-                      color: Color(0xFF2BEE6C),
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatTime(post.time),
-                    style: AppTextStyles.label.copyWith(
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
-  String _formatCurrency(double amount) {
-    if (amount >= 10000) {
-      return '${(amount / 10000).toStringAsFixed(2)}万';
-    }
-    return amount.toStringAsFixed(2);
-  }
 }
 
 // 环形图绘制器
@@ -561,10 +890,10 @@ class _DonutChartPainter extends CustomPainter {
     double startAngle = -pi / 2; // 从顶部开始
 
     final colors = [
-      const Color(0xFF2BEE6C),
-      const Color(0xFF2BEE6C).withOpacity(0.7),
-      const Color(0xFF2BEE6C).withOpacity(0.4),
-      const Color(0xFF2BEE6C).withOpacity(0.2),
+      const Color(0xFF00E677),
+      const Color(0xFF00E677).withOpacity(0.7),
+      const Color(0xFF00E677).withOpacity(0.4),
+      const Color(0xFF00E677).withOpacity(0.2),
     ];
 
     final values = [
@@ -576,6 +905,7 @@ class _DonutChartPainter extends CustomPainter {
 
     for (int i = 0; i < values.length; i++) {
       final sweepAngle = 2 * pi * values[i];
+      
       final paint = Paint()
         ..color = colors[i]
         ..style = PaintingStyle.stroke

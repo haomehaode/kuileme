@@ -309,7 +309,12 @@ class _NotificationItem extends StatelessWidget {
               const SizedBox(width: 12),
               CircleAvatar(
                 radius: 20,
-                backgroundImage: NetworkImage(notification.fromUser!.avatar),
+                backgroundImage: (notification.fromUser!.avatar.isNotEmpty)
+                    ? NetworkImage(notification.fromUser!.avatar)
+                    : null,
+                child: (notification.fromUser!.avatar.isEmpty)
+                    ? Icon(Icons.person, color: Colors.grey, size: 20)
+                    : null,
               ),
             ],
           ],

@@ -10,6 +10,7 @@ import 'views/post_detail_view.dart';
 import 'views/analysis_view.dart';
 import 'views/bill_view.dart';
 import 'views/login_view.dart';
+import 'views/reset_password_view.dart';
 import 'views/register_view.dart';
 import 'views/profile_view.dart';
 import 'views/splash_view.dart';
@@ -148,31 +149,53 @@ class _RootScaffoldState extends State<_RootScaffold> {
     if (_apiService == null) return;
     
     try {
-      // 并行加载数据
-      final results = await Future.wait([
-        _apiService!.getPosts(),
-        _apiService!.getGrowthSummary(),
-        _apiService!.getNotifications(),
-        _apiService!.getMedals(),
-      ]);
+      // 分别处理每个 API 调用，避免一个失败影响其他
+      // 加载帖子列表
+      try {
+        final posts = await _apiService!.getPosts();
+        setState(() {
+          _posts.clear();
+          _posts.addAll(posts);
+          _lossPostCount = _posts.length;
+        });
+      } catch (e) {
+        print('加载帖子失败: $e');
+      }
       
-      setState(() {
-        _posts.clear();
-        _posts.addAll(results[0] as List<PostModel>);
-        _lossPostCount = _posts.length;
-        
-        final growthData = results[1] as Map<String, dynamic>;
-        _userLevel = growthData['level'] as int? ?? 1;
-        _userExp = growthData['exp'] as int? ?? 0;
-        _points = growthData['points'] as int? ?? 0;
-        _recoveryBalance = (growthData['recovery_balance'] as num?)?.toDouble() ?? 0.0;
-        
-        _notifications.clear();
-        _notifications.addAll(results[2] as List<NotificationModel>);
-        
-        _medals.clear();
-        _medals.addAll(results[3] as List<MedalModel>);
-      });
+      // 加载成长汇总
+      try {
+        final growthData = await _apiService!.getGrowthSummary();
+        setState(() {
+          _userLevel = growthData['level'] as int? ?? 1;
+          _userExp = growthData['exp'] as int? ?? 0;
+          _points = growthData['points'] as int? ?? 0;
+          _recoveryBalance = (growthData['recovery_balance'] as num?)?.toDouble() ?? 0.0;
+        });
+      } catch (e) {
+        print('加载成长汇总失败: $e');
+      }
+      
+      // 加载通知
+      try {
+        final notifications = await _apiService!.getNotifications();
+        setState(() {
+          _notifications.clear();
+          _notifications.addAll(notifications);
+        });
+      } catch (e) {
+        print('加载通知失败: $e');
+      }
+      
+      // 加载勋章
+      try {
+        final medals = await _apiService!.getMedals();
+        setState(() {
+          _medals.clear();
+          _medals.addAll(medals);
+        });
+      } catch (e) {
+        print('加载勋章失败: $e');
+      }
     } catch (e) {
       print('加载数据失败: $e');
     }
@@ -536,6 +559,24 @@ class _RootScaffoldState extends State<_RootScaffold> {
             Navigator.of(context).pop();
             _navigateToRegister(context);
           },
+          onNavigateToResetPassword: () {
+            Navigator.of(context).pop();
+            _navigateToResetPassword(context);
+          },
+        ),
+      ),
+    );
+  }
+
+  void _navigateToResetPassword(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => ResetPasswordView(
+          onBack: () => Navigator.of(context).pop(),
+          onNavigateToLogin: () {
+            Navigator.of(context).pop();
+            _navigateToLogin(context);
+          },
         ),
       ),
     );
@@ -609,6 +650,19 @@ class _RootScaffoldState extends State<_RootScaffold> {
                   });
                   await _initializeApp();
                 },
+                onBack: () => Navigator.of(context).pop(),
+                onNavigateToLogin: () {
+                  Navigator.of(context).pop();
+                },
+              ),
+            ),
+          );
+        },
+        onNavigateToResetPassword: () {
+          // 显示重置密码页面
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (context) => ResetPasswordView(
                 onBack: () => Navigator.of(context).pop(),
                 onNavigateToLogin: () {
                   Navigator.of(context).pop();

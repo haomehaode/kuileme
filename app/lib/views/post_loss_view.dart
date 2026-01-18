@@ -62,17 +62,6 @@ class _PostLossViewState extends State<PostLossView> {
           style: AppTextStyles.appBarTitle,
         ),
         centerTitle: true,
-        actions: [
-          TextButton(
-            onPressed: _handlePublish,
-            child: Text(
-              '发布',
-              style: AppTextStyles.subtitle.copyWith(
-                color: Color(0xFF2BEE6C),
-              ),
-            ),
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
